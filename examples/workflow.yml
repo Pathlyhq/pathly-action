@@ -1,0 +1,59 @@
+# Example — Pathly visibility in GitHub Actions
+# Docs: https://pathlyhq.com/en/developers · Product: https://pathlyhq.com
+
+name: Pathly CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pathly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Pathly token
+        id: ping
+        uses: pathlyhq/pathly-action@v1
+        with:
+          api_token: ${{ secrets.PATHLY_API_TOKEN }}
+          operation: ping
+
+      - name: Ensure HTTP scenario
+        id: scenario
+        uses: pathlyhq/pathly-action@v1
+        with:
+          api_token: ${{ secrets.PATHLY_API_TOKEN }}
+          operation: ensure-scenario
+          scenario_json: |
+            {
+              "name": "Production home",
+              "url": "https://www.example.com/",
+              "intervalSec": 300,
+              "expectedStatus": 200,
+              "severity": "major",
+              "tags": ["ci", "prod"]
+            }
+
+      - name: Upsert SLA target
+        uses: pathlyhq/pathly-action@v1
+        with:
+          api_token: ${{ secrets.PATHLY_API_TOKEN }}
+          operation: upsert-sla
+          sla_json: |
+            {
+              "name": "Home availability",
+              "objectivePct": 99.9,
+              "windowDays": 30
+            }
+
+      - name: Optional outbound webhook
+        uses: pathlyhq/pathly-action@v1
+        with:
+          api_token: ${{ secrets.PATHLY_API_TOKEN }}
+          operation: create-webhook
+          webhook_json: |
+            {
+              "url": "https://hooks.example.com/pathly",
+              "events": ["run.failed", "run.recovered"]
+            }

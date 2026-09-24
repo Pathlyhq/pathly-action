@@ -1,0 +1,60 @@
+name: "Setup Pathly"
+description: >-
+  Verify a Pathly API token and optionally create HTTP monitoring scenarios,
+  outbound webhooks, or SLA targets from GitHub Actions. Pathly is synthetic
+  monitoring for customer journeys — product https://pathlyhq.com · API docs
+  https://pathlyhq.com/en/developers · sign up https://pathlyhq.com/en/login?mode=signup
+author: "Simon Raynaud / keyral (Pathly)"
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  api_token:
+    description: >-
+      Pathly API token (sp_…). Prefer secrets.PATHLY_API_TOKEN. Never commit
+      the value. Create a key at https://pathlyhq.com
+    required: true
+  api_url:
+    description: Pathly API base URL (default https://api.pathlyhq.com)
+    required: false
+    default: "https://api.pathlyhq.com"
+  operation:
+    description: >-
+      One of ping | create-scenario | ensure-scenario | list-scenarios |
+      create-webhook | upsert-sla
+    required: false
+    default: "ping"
+  scenario_json:
+    description: JSON body for create-scenario / ensure-scenario (name + url required)
+    required: false
+  webhook_json:
+    description: JSON body for create-webhook (url + events required)
+    required: false
+  sla_json:
+    description: JSON body for upsert-sla (objectivePct + windowDays required)
+    required: false
+
+outputs:
+  ok:
+    description: Set to true when ping succeeds
+  plan_id:
+    description: Plan id returned by GET /v1/usage when available
+  scenario_id:
+    description: Scenario id after create or ensure
+  created:
+    description: true if a scenario was created by ensure-scenario / create-scenario
+  count:
+    description: Number of scenarios returned by list-scenarios
+  scenarios_json:
+    description: JSON array of scenarios from list-scenarios
+  webhook_id:
+    description: Webhook id after create-webhook
+  webhook_secret:
+    description: HMAC signing secret (returned once — store in a secret manager)
+  sla_id:
+    description: SLA target id after upsert-sla
+
+runs:
+  using: node20
+  main: dist/index.js

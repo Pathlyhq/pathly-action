@@ -1,0 +1,59 @@
+{
+  "name": "@pathlyhq/setup-pathly",
+  "version": "0.1.0",
+  "description": "GitHub Action to verify a Pathly API token and manage HTTP scenarios, webhooks, and SLA targets from CI",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Simon Raynaud / keyral"
+  },
+  "contributors": [
+    "Pathly <devs@pathlyhq.com>"
+  ],
+  "homepage": "https://pathlyhq.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pathlyhq/pathly-action.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pathlyhq/pathly-action/issues"
+  },
+  "keywords": [
+    "pathly",
+    "pathlyhq",
+    "monitoring",
+    "synthetic-monitoring",
+    "saas",
+    "github-actions",
+    "sla",
+    "ci"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "action.yml",
+    "LICENSE",
+    "README.md",
+    "README.fr.md",
+    "CHANGELOG.md",
+    "NOTICE",
+    "AUTHORS"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/api.ts --format esm --dts --clean --sourcemap --out-dir dist",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "prepare-action": "npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@vitest/coverage-v8": "^3.0.9",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
