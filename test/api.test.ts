@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_API_URL,
+  DEFAULT_RUN_TIMEOUT_SEC,
   PathlyClient,
   PathlyError,
+  isTerminalRunStatus,
   parseJsonInput,
   parseOperation,
+  parseTimeoutSec,
 } from "../src/api.js";
 
 type Call = { url: string; init: RequestInit };
@@ -68,6 +71,28 @@ describe("parse helpers", () => {
     expect(parseOperation("ping")).toBe("ping");
     expect(parseOperation(" Create-Scenario ")).toBe("create-scenario");
     expect(parseOperation("upsert-sla")).toBe("upsert-sla");
+    expect(parseOperation("run-scenario")).toBe("run-scenario");
+    expect(parseOperation(" RUN-AND-WAIT ")).toBe("run-and-wait");
+  });
+
+  it("parses timeout_sec", () => {
+    expect(parseTimeoutSec(undefined)).toBe(DEFAULT_RUN_TIMEOUT_SEC);
+    expect(parseTimeoutSec("")).toBe(DEFAULT_RUN_TIMEOUT_SEC);
+    expect(parseTimeoutSec("  ")).toBe(DEFAULT_RUN_TIMEOUT_SEC);
+    expect(parseTimeoutSec("90")).toBe(90);
+    expect(parseTimeoutSec("3600")).toBe(3600);
+    expect(parseTimeoutSec("99999")).toBe(3600);
+    expect(() => parseTimeoutSec("0")).toThrow(/positive number/);
+    expect(() => parseTimeoutSec("-1")).toThrow(/positive number/);
+    expect(() => parseTimeoutSec("nope")).toThrow(/positive number/);
+  });
+
+  it("recognizes terminal run statuses from the API", () => {
+    expect(isTerminalRunStatus("ok")).toBe(true);
+    expect(isTerminalRunStatus("fail")).toBe(true);
+    expect(isTerminalRunStatus("error")).toBe(true);
+    expect(isTerminalRunStatus("queued")).toBe(false);
+    expect(isTerminalRunStatus("running")).toBe(false);
   });
 
   it("rejects unknown operations", () => {
@@ -172,6 +197,288 @@ describe("scenarios", () => {
   });
 });
 
+describe("runs", () => {
+  const scenarioId = "11111111-1111-4111-8111-111111111111";
+  const runId = "22222222-2222-4222-8222-222222222222";
+
+  it("runScenario posts without Idempotency-Key", async () => {
+    const { client, calls } = clientWith([{ body: { ok: true, queued: true, jobId: "job-1" } }]);
+    const queued = await client.runScenario(scenarioId);
+    expect(queued.jobId).toBe("job-1");
+    expect(calls[0].url).toBe(
+      `https://api.test.pathlyhq.com/v1/scenarios/${scenarioId}/run`,
+    );
+    expect(calls[0].init.method).toBe("POST");
+    const headers = calls[0].init.headers as Record<string, string>;
+    expect(headers["idempotency-key"]).toBeUndefined();
+  });
+
+  it("runScenario rejects an empty id", async () => {
+    const { client } = clientWith([]);
+    await expect(client.runScenario("  ")).rejects.toThrow(/scenario_id is required/);
+  });
+
+  it("getRun and listRuns", async () => {
+    const { client, calls } = clientWith([
+      { body: { id: runId, status: "ok", message: null } },
+      { body: { items: [{ id: runId, status: "ok" }], nextCursor: null } },
+      { body: {} },
+    ]);
+    await expect(client.getRun(runId)).resolves.toMatchObject({ id: runId, status: "ok" });
+    const page = await client.listRuns({ scenarioId, limit: 20, cursor: "c1" });
+    expect(page.items).toHaveLength(1);
+    expect(calls[1].url).toContain("scenarioId=");
+    expect(calls[1].url).toContain("limit=20");
+    expect(calls[1].url).toContain("cursor=c1");
+    const empty = await client.listRuns();
+    expect(empty.items).toEqual([]);
+    expect(calls[2].url).toBe("https://api.test.pathlyhq.com/v1/runs");
+  });
+
+  it("getRun rejects an empty id", async () => {
+    const { client } = clientWith([]);
+    await expect(client.getRun("")).rejects.toThrow(/run id is required/);
+  });
+
+  it("runAndWait returns when the new run is ok", async () => {
+    const { client, calls } = clientWith([
+      { body: { items: [{ id: "old-run", status: "ok" }] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId, status: "ok" }, { id: "old-run", status: "ok" }] } },
+      { body: { id: runId, status: "ok", message: null } },
+    ]);
+    const run = await client.runAndWait(scenarioId, {
+      timeoutSec: 5,
+      pollIntervalMs: 1,
+      sleep: async () => undefined,
+    });
+    expect(run.id).toBe(runId);
+    expect(run.status).toBe("ok");
+    expect(calls[1].url).toContain(`/v1/scenarios/${scenarioId}/run`);
+    expect(calls[3].url).toContain(`/v1/runs/${runId}`);
+  });
+
+  it("runAndWait fails the action when status is fail", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId, status: "fail" }] } },
+      { body: { id: runId, status: "fail", message: "HTTP 500" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
+    ).rejects.toThrow(/ended with status fail: HTTP 500/);
+  });
+
+  it("runAndWait fails when status is error without a message", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId }] } },
+      { body: { id: runId, status: "error" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
+    ).rejects.toThrow(/ended with status error$/);
+  });
+
+  it("runAndWait keeps polling after 404 then succeeds", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId, status: "ok" }] } },
+      { status: 404, body: { error: "Exécution introuvable" } },
+      { body: { items: [{ id: runId, status: "ok" }] } },
+      { body: { id: runId, status: "ok" } },
+    ]);
+    const run = await client.runAndWait(scenarioId, {
+      timeoutSec: 5,
+      pollIntervalMs: 1,
+      sleep: async () => undefined,
+    });
+    expect(run.status).toBe("ok");
+  });
+
+  it("runAndWait rethrows non-404 API errors", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { status: 401, body: { error: "bad token" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
+    ).rejects.toMatchObject({ status: 401, message: "bad token" });
+  });
+
+  it("runAndWait times out if no new run appears", async () => {
+    let t = 0;
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [] } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, {
+        timeoutSec: 2,
+        pollIntervalMs: 1,
+        now: () => t,
+        sleep: async (ms) => {
+          t += ms + 2_000;
+        },
+      }),
+    ).rejects.toThrow(/did not finish within 2s/);
+  });
+
+  it("runAndWait includes the last 404 hint on timeout", async () => {
+    let t = 0;
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId }] } },
+      { status: 404, body: { error: "Exécution introuvable" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, {
+        timeoutSec: 1,
+        pollIntervalMs: 1,
+        now: () => t,
+        sleep: async (ms) => {
+          t += ms + 2_000;
+        },
+      }),
+    ).rejects.toThrow(/did not finish within 1s \(Exécution introuvable/);
+  });
+
+  it("runAndWait ignores prior items without a string id", async () => {
+    const { client } = clientWith([
+      { body: { items: [{ id: 12, status: "ok" }, { id: "", status: "ok" }] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId, status: "ok" }] } },
+      { body: { id: runId, status: "ok" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
+    ).resolves.toMatchObject({ id: runId, status: "ok" });
+  });
+
+  it("runAndWait treats a non-string status as non-terminal then succeeds", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId }] } },
+      { body: { id: runId, status: 1 } },
+      { body: { items: [{ id: runId, status: "ok" }] } },
+      { body: { id: runId, status: "ok" } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
+    ).resolves.toMatchObject({ status: "ok" });
+  });
+
+  it("runAndWait breaks when the deadline is reached mid-loop", async () => {
+    let t = 0;
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [] } },
+    ]);
+    await expect(
+      client.runAndWait(scenarioId, {
+        timeoutSec: 1,
+        pollIntervalMs: 1,
+        now: () => {
+          const current = t;
+          t += 600;
+          return current;
+        },
+        sleep: async () => {
+          throw new Error("sleep should not run after deadline");
+        },
+      }),
+    ).rejects.toThrow(/did not finish within 1s/);
+  });
+
+  it("runAndWait rejects a non-positive timeout", async () => {
+    const { client } = clientWith([]);
+    await expect(client.runAndWait(scenarioId, { timeoutSec: 0 })).rejects.toThrow(
+      /positive number/,
+    );
+  });
+
+  it("runAndWait uses client defaults when options are omitted", async () => {
+    let n = 0;
+    const fetchOnce = vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      n += 1;
+      if (u.includes("/scenarios/") && u.endsWith("/run")) {
+        return new Response(JSON.stringify({ ok: true, queued: true, jobId: "j" }), { status: 200 });
+      }
+      if (u.includes(`/v1/runs/${runId}`)) {
+        return new Response(JSON.stringify({ id: runId, status: "ok" }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify(n === 1 ? { items: [] } : { items: [{ id: runId, status: "ok" }] }),
+        { status: 200 },
+      );
+    });
+    const client = new PathlyClient({
+      token: "sp_x",
+      apiUrl: "https://api.test.pathlyhq.com",
+      fetch: fetchOnce as unknown as typeof fetch,
+      sleep: async () => undefined,
+    });
+    await expect(client.runAndWait(scenarioId)).resolves.toMatchObject({ status: "ok" });
+  });
+
+  it("uses the default sleep when none is injected", async () => {
+    vi.useFakeTimers();
+    try {
+      let n = 0;
+      const fetchOnce = vi.fn(async (url: string | URL) => {
+        const u = String(url);
+        n += 1;
+        if (u.includes("/scenarios/") && u.endsWith("/run")) {
+          return new Response(JSON.stringify({ ok: true, queued: true }), { status: 200 });
+        }
+        if (u.includes(`/v1/runs/${runId}`)) {
+          return new Response(JSON.stringify({ id: runId, status: "ok" }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify(n <= 3 ? { items: [] } : { items: [{ id: runId, status: "ok" }] }),
+          { status: 200 },
+        );
+      });
+      const client = new PathlyClient({
+        token: "sp_x",
+        apiUrl: "https://api.test.pathlyhq.com",
+        fetch: fetchOnce as unknown as typeof fetch,
+      });
+      const pending = client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 10 });
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(pending).resolves.toMatchObject({ status: "ok" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a non-terminal status and polls again", async () => {
+    const { client } = clientWith([
+      { body: { items: [] } },
+      { body: { ok: true, queued: true, jobId: "job-1" } },
+      { body: { items: [{ id: runId, status: "running" }] } },
+      { body: { id: runId, status: "running" } },
+      { body: { items: [{ id: runId, status: "ok" }] } },
+      { body: { id: runId, status: "ok" } },
+    ]);
+    const run = await client.runAndWait(scenarioId, {
+      timeoutSec: 5,
+      pollIntervalMs: 1,
+      sleep: async () => undefined,
+    });
+    expect(run.status).toBe("ok");
+  });
+});
+
 describe("webhooks and sla", () => {
   it("creates webhook", async () => {
     const { client, calls } = clientWith([
@@ -243,7 +550,7 @@ describe("error body handling", () => {
       await client.listScenarios();
       expect(fetchOnce).toHaveBeenCalled();
       const headers = (fetchOnce.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-      expect(headers["user-agent"]).toBe("pathly-github-action/0.1.0");
+      expect(headers["user-agent"]).toBe("pathly-github-action/0.1.1");
     } finally {
       globalThis.fetch = prev;
     }

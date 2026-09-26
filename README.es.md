@@ -24,6 +24,7 @@ Action de GitHub lista para el Marketplace que conecta el monitoreo sintético d
 - lista escenarios
 - crea un webhook de salida firmado
 - hace upsert de un objetivo de disponibilidad (SLA)
+- ejecuta un escenario y falla el job si el run no es `ok`
 
 Úselo como puerta de despliegue, smoke post-merge, o para mantener Pathly-as-code sincronizado con GitHub Actions.
 
@@ -64,10 +65,12 @@ Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 |---------|-------------|-------------|-------------|
 | `api_token` | sí | — | Token Pathly (`sp_…`). Guardarlo en GitHub Secrets. |
 | `api_url` | no | `https://api.pathlyhq.com` | URL base de la API |
-| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` |
+| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | ops de escenario | — | JSON con al menos `name` y `url` |
 | `webhook_json` | webhook | — | JSON con `url` y `events` |
 | `sla_json` | SLA | — | JSON con `objectivePct` y `windowDays` |
+| `scenario_id` | `run-scenario` | — | UUID del escenario a lanzar |
+| `timeout_sec` | no | `120` | Espera de un estado terminal (`ok` / `fail` / `error`) |
 
 ## Salidas
 
@@ -78,11 +81,12 @@ Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secreto una sola vez) |
 | `sla_id` | `upsert-sla` |
+| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Seguridad
 
 - Nunca haga commit de tokens `sp_`. Use `secrets.PATHLY_API_TOKEN`.
-- Preferir menor privilegio (`scenarios:read`, `scenarios:write`, `alerting:write`, `sla:write` según el caso).
+- Preferir menor privilegio (`scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write`).
 - `ping` llama `GET /v1/usage`. HTTP `403` se trata como éxito (token válido, falta `org:read`).
 - Las creaciones envían un encabezado `Idempotency-Key`.
 

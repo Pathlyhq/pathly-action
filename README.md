@@ -26,6 +26,7 @@ Marketplace-ready GitHub Action to wire [Pathly](https://pathlyhq.com) synthetic
 - lists scenarios
 - creates a signed outbound webhook
 - upserts an availability (SLA) target
+- runs a scenario and fails the job if the run is not `ok`
 
 Use it as a deploy gate, a post-merge smoke, or to keep Pathly-as-code in sync with GitHub Actions.
 
@@ -58,7 +59,19 @@ Ensure an HTTP scenario after deploy:
       }
 ```
 
-Full example: [`examples/workflow.yml`](./examples/workflow.yml).
+Run a scenario after deploy (CI goes red if the run is `fail` or `error`):
+
+```yaml
+- name: Smoke checkout
+  uses: pathlyhq/pathly-action@v1
+  with:
+    api_token: ${{ secrets.PATHLY_API_TOKEN }}
+    operation: run-scenario
+    scenario_id: ${{ vars.PATHLY_CHECKOUT_SCENARIO_ID }}
+    timeout_sec: "120"
+```
+
+`run-and-wait` is an alias of `run-scenario`. The key needs scope `runs:trigger` (and `runs:read` to poll). Full example: [`examples/workflow.yml`](./examples/workflow.yml).
 
 ## Inputs
 
@@ -66,10 +79,12 @@ Full example: [`examples/workflow.yml`](./examples/workflow.yml).
 |-------|----------|---------|-------------|
 | `api_token` | yes | — | Pathly API token (`sp_…`). Store in GitHub Secrets. |
 | `api_url` | no | `https://api.pathlyhq.com` | API base URL |
-| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` |
+| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | for scenario ops | — | JSON with at least `name` and `url` |
 | `webhook_json` | for webhook | — | JSON with `url` and `events` |
 | `sla_json` | for SLA | — | JSON with `objectivePct` and `windowDays` |
+| `scenario_id` | for `run-scenario` | — | Scenario UUID to trigger |
+| `timeout_sec` | no | `120` | Seconds to wait for a terminal run (`ok` / `fail` / `error`) |
 
 ## Outputs
 
@@ -80,11 +95,12 @@ Full example: [`examples/workflow.yml`](./examples/workflow.yml).
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret returned once) |
 | `sla_id` | `upsert-sla` |
+| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Security
 
 - Never commit `sp_` tokens. Use `secrets.PATHLY_API_TOKEN`.
-- Prefer least privilege scopes (`scenarios:read` for list/ping-ish checks, `scenarios:write` to create, `alerting:write` for webhooks, `sla:write` for targets).
+- Prefer least privilege scopes (`scenarios:read` for list/ping-ish checks, `scenarios:write` to create, `runs:trigger` + `runs:read` to run and poll, `alerting:write` for webhooks, `sla:write` for targets).
 - `ping` calls `GET /v1/usage`. HTTP `403` is treated as success (token valid, missing `org:read`).
 - Creates send an `Idempotency-Key` header.
 

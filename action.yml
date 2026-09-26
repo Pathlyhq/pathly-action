@@ -1,8 +1,8 @@
 name: "Setup Pathly"
 description: >-
-  Verify a Pathly API token and optionally create HTTP monitoring scenarios,
-  outbound webhooks, or SLA targets from GitHub Actions. Pathly is synthetic
-  monitoring for customer journeys — product https://pathlyhq.com · API docs
+  Verify a Pathly API token, manage Ping / Flow / Chain, and run one as a CI
+  gate (fails the job if the run is not ok). A Chain is create-scenario /
+  ensure-scenario with httpChain hops. Product https://pathlyhq.com · API docs
   https://pathlyhq.com/en/developers · sign up https://pathlyhq.com/en/login?mode=signup
 author: "Simon Raynaud / keyral (Pathly)"
 branding:
@@ -22,7 +22,7 @@ inputs:
   operation:
     description: >-
       One of ping | create-scenario | ensure-scenario | list-scenarios |
-      create-webhook | upsert-sla
+      create-webhook | upsert-sla | run-scenario | run-and-wait
     required: false
     default: "ping"
   scenario_json:
@@ -34,10 +34,17 @@ inputs:
   sla_json:
     description: JSON body for upsert-sla (objectivePct + windowDays required)
     required: false
+  scenario_id:
+    description: Scenario UUID for run-scenario / run-and-wait (POST /v1/scenarios/:id/run)
+    required: false
+  timeout_sec:
+    description: How long to wait for a terminal run status (default 120)
+    required: false
+    default: "120"
 
 outputs:
   ok:
-    description: Set to true when ping succeeds
+    description: true when ping succeeds, or when run-scenario finishes with status ok
   plan_id:
     description: Plan id returned by GET /v1/usage when available
   scenario_id:
@@ -54,6 +61,10 @@ outputs:
     description: HMAC signing secret (returned once — store in a secret manager)
   sla_id:
     description: SLA target id after upsert-sla
+  run_id:
+    description: Run id after run-scenario / run-and-wait
+  run_status:
+    description: Terminal run status (ok | fail | error)
 
 runs:
   using: node20

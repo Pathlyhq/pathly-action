@@ -4,7 +4,7 @@
  */
 
 export const DEFAULT_API_URL = "https://api.pathlyhq.com";
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 export const DEFAULT_USER_AGENT = `pathly-github-action/${VERSION}`;
 
 export type FetchLike = typeof globalThis.fetch;
@@ -41,7 +41,46 @@ export type PathlyClientOptions = {
   fetch?: FetchLike;
   userAgent?: string;
   idempotencyKey?: () => string;
+  /** Attente entre deux sondes. Remplaçable en test. */
+  sleep?: (ms: number) => Promise<void>;
 };
+
+/** Statuts terminaux d'une exécution Pathly (`runs.status`). */
+export const TERMINAL_RUN_STATUSES = ["ok", "fail", "error"] as const;
+export type TerminalRunStatus = (typeof TERMINAL_RUN_STATUSES)[number];
+
+export const DEFAULT_RUN_TIMEOUT_SEC = 120;
+export const DEFAULT_POLL_INTERVAL_MS = 2_000;
+
+export type JsonObject = Record<string, unknown>;
+
+export type RunRecord = JsonObject & {
+  id?: string;
+  status?: string;
+  message?: string;
+};
+
+export type RunWaitOptions = {
+  timeoutSec?: number;
+  pollIntervalMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+};
+
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export function isTerminalRunStatus(status: string): status is TerminalRunStatus {
+  return (TERMINAL_RUN_STATUSES as readonly string[]).includes(status);
+}
+
+export function parseTimeoutSec(raw: string | undefined, fallback = DEFAULT_RUN_TIMEOUT_SEC): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error("timeout_sec must be a positive number");
+  }
+  return Math.min(Math.floor(n), 3_600);
+}
 
 export type ScenarioCreateBody = {
   type?: "http";
@@ -71,8 +110,6 @@ export type SlaUpsertBody = {
   warnAtBudgetRatio?: number;
   enabled?: boolean;
 };
-
-export type JsonObject = Record<string, unknown>;
 
 function normalizeBaseUrl(apiUrl: string): string {
   const base = apiUrl.replace(/\/+$/, "");
@@ -116,6 +153,7 @@ export class PathlyClient {
   private readonly doFetch: FetchLike;
   private readonly userAgent: string;
   private readonly makeKey: () => string;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(options: PathlyClientOptions) {
     this.token = validateToken(options.token);
@@ -123,12 +161,14 @@ export class PathlyClient {
     this.doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
     this.makeKey = options.idempotencyKey ?? defaultIdempotencyKey;
+    this.sleep = options.sleep ?? defaultSleep;
   }
 
   private async request(
     method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body?: unknown,
+    opts?: { idempotent?: boolean },
   ): Promise<unknown> {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
@@ -137,7 +177,7 @@ export class PathlyClient {
       "user-agent": this.userAgent,
     };
     if (body !== undefined) headers["content-type"] = "application/json";
-    if (method !== "GET") {
+    if (method !== "GET" && opts?.idempotent !== false) {
       headers["idempotency-key"] = this.makeKey();
     }
 
@@ -219,6 +259,97 @@ export class PathlyClient {
   async upsertSla(body: SlaUpsertBody): Promise<JsonObject> {
     return (await this.request("PUT", "/v1/sla-targets", body)) as JsonObject;
   }
+
+  /**
+   * Déclenche une exécution. Non idempotent : deux appels = deux runs.
+   * Réponse : `{ ok, queued, jobId }`. Le `jobId` n'est pas l'id du run.
+   */
+  async runScenario(scenarioId: string): Promise<JsonObject> {
+    const id = scenarioId.trim();
+    if (!id) throw new Error("scenario_id is required");
+    return (await this.request(
+      "POST",
+      `/v1/scenarios/${encodeURIComponent(id)}/run`,
+      undefined,
+      { idempotent: false },
+    )) as JsonObject;
+  }
+
+  async getRun(runId: string): Promise<RunRecord> {
+    const id = runId.trim();
+    if (!id) throw new Error("run id is required");
+    return (await this.request("GET", `/v1/runs/${encodeURIComponent(id)}`)) as RunRecord;
+  }
+
+  async listRuns(query?: { scenarioId?: string; limit?: number; cursor?: string }): Promise<{
+    items: RunRecord[];
+    nextCursor?: string | null;
+  }> {
+    const params = new URLSearchParams();
+    if (query?.scenarioId) params.set("scenarioId", query.scenarioId);
+    if (query?.limit !== undefined) params.set("limit", String(query.limit));
+    if (query?.cursor) params.set("cursor", query.cursor);
+    const qs = params.toString();
+    const data = (await this.request("GET", `/v1/runs${qs ? `?${qs}` : ""}`)) as {
+      items?: RunRecord[];
+      nextCursor?: string | null;
+    };
+    return { items: data.items ?? [], nextCursor: data.nextCursor ?? null };
+  }
+
+  /**
+   * POST /run puis poll GET /v1/runs jusqu'à un statut terminal (`ok` / `fail` / `error`).
+   * Lève si le run n'est pas `ok` ou si le délai expire — la CI passe au rouge.
+   */
+  async runAndWait(scenarioId: string, options: RunWaitOptions = {}): Promise<RunRecord> {
+    const timeoutSec = options.timeoutSec ?? DEFAULT_RUN_TIMEOUT_SEC;
+    if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+      throw new Error("timeout_sec must be a positive number");
+    }
+    const pollMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    const sleep = options.sleep ?? this.sleep;
+    const now = options.now ?? Date.now;
+    const deadline = now() + timeoutSec * 1000;
+
+    const prior = await this.listRuns({ scenarioId, limit: 20 });
+    const seen = new Set(
+      prior.items.map((r) => (typeof r.id === "string" ? r.id : "")).filter(Boolean),
+    );
+
+    await this.runScenario(scenarioId);
+
+    let lastError: unknown;
+    while (now() < deadline) {
+      try {
+        const page = await this.listRuns({ scenarioId, limit: 20 });
+        const fresh = page.items.find((r) => typeof r.id === "string" && r.id && !seen.has(r.id));
+        if (fresh?.id) {
+          const run = await this.getRun(String(fresh.id));
+          const status = typeof run.status === "string" ? run.status : "";
+          if (isTerminalRunStatus(status)) {
+            if (status !== "ok") {
+              const detail = typeof run.message === "string" && run.message ? `: ${run.message}` : "";
+              throw new Error(`Pathly run ${run.id} ended with status ${status}${detail}`);
+            }
+            return run;
+          }
+        }
+      } catch (e) {
+        if (e instanceof Error && /ended with status/.test(e.message)) throw e;
+        if (e instanceof PathlyError && e.notFound) {
+          lastError = e;
+        } else {
+          throw e;
+        }
+      }
+      if (now() >= deadline) break;
+      await sleep(pollMs);
+    }
+    const hint = lastError instanceof Error ? ` (${lastError.message})` : "";
+    throw new Error(
+      `Pathly run for scenario ${scenarioId} did not finish within ${timeoutSec}s${hint}`,
+    );
+  }
 }
 
 export type Operation =
@@ -227,7 +358,9 @@ export type Operation =
   | "ensure-scenario"
   | "list-scenarios"
   | "create-webhook"
-  | "upsert-sla";
+  | "upsert-sla"
+  | "run-scenario"
+  | "run-and-wait";
 
 export function parseOperation(raw: string): Operation {
   const op = raw.trim().toLowerCase() as Operation;
@@ -238,6 +371,8 @@ export function parseOperation(raw: string): Operation {
     "list-scenarios",
     "create-webhook",
     "upsert-sla",
+    "run-scenario",
+    "run-and-wait",
   ];
   if (!allowed.includes(op)) {
     throw new Error(`Unknown operation "${raw}". Allowed: ${allowed.join(", ")}`);

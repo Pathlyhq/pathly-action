@@ -9,6 +9,7 @@ import {
   PathlyError,
   parseJsonInput,
   parseOperation,
+  parseTimeoutSec,
   type ScenarioCreateBody,
   type SlaUpsertBody,
   type WebhookCreateBody,
@@ -44,6 +45,8 @@ export type ActionInputs = {
   scenarioJson?: string;
   webhookJson?: string;
   slaJson?: string;
+  scenarioId?: string;
+  timeoutSec?: string;
 };
 
 export function readInputsFromEnv(): ActionInputs {
@@ -54,6 +57,8 @@ export function readInputsFromEnv(): ActionInputs {
     scenarioJson: getInput("scenario_json") || undefined,
     webhookJson: getInput("webhook_json") || undefined,
     slaJson: getInput("sla_json") || undefined,
+    scenarioId: getInput("scenario_id") || undefined,
+    timeoutSec: getInput("timeout_sec") || undefined,
   };
 }
 
@@ -125,6 +130,20 @@ export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch):
     setOutput("sla_id", String(target.id ?? ""));
     console.log(`Upserted SLA target ${target.id}`);
     return;
+  }
+
+  if (op === "run-scenario" || op === "run-and-wait") {
+    const scenarioId = (inputs.scenarioId ?? "").trim();
+    if (!scenarioId) {
+      throw new Error('Input "scenario_id" is required for run-scenario');
+    }
+    const timeoutSec = parseTimeoutSec(inputs.timeoutSec);
+    const run = await client.runAndWait(scenarioId, { timeoutSec });
+    const status = typeof run.status === "string" ? run.status : "";
+    setOutput("run_id", String(run.id ?? ""));
+    setOutput("run_status", status);
+    setOutput("ok", status === "ok" ? "true" : "false");
+    console.log(`Pathly run ${run.id} finished with status ${status}.`);
   }
 }
 

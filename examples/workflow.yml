@@ -47,6 +47,14 @@ jobs:
               "windowDays": 30
             }
 
+      - name: Run checkout smoke (fails the job if not ok)
+        uses: pathlyhq/pathly-action@v1
+        with:
+          api_token: ${{ secrets.PATHLY_API_TOKEN }}
+          operation: run-scenario
+          scenario_id: ${{ steps.scenario.outputs.scenario_id }}
+          timeout_sec: "120"
+
       - name: Optional outbound webhook
         uses: pathlyhq/pathly-action@v1
         with:

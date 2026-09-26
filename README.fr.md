@@ -26,6 +26,7 @@ Action GitHub prête marketplace pour brancher le monitoring synthétique [Pathl
 - lister les scénarios
 - créer un webhook sortant signé
 - upsert un objectif de disponibilité (SLA)
+- lancer un scénario et faire échouer le job si le run n’est pas `ok`
 
 Utile en porte de déploiement, smoke post-merge, ou Pathly-as-code depuis Actions.
 
@@ -66,10 +67,12 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 |--------|-------------|--------|-------------|
 | `api_token` | oui | — | Jeton Pathly (`sp_…`). À stocker dans les Secrets GitHub. |
 | `api_url` | non | `https://api.pathlyhq.com` | Base de l’API |
-| `operation` | non | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` |
+| `operation` | non | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | scénarios | — | JSON avec au moins `name` et `url` |
 | `webhook_json` | webhook | — | JSON avec `url` et `events` |
 | `sla_json` | SLA | — | JSON avec `objectivePct` et `windowDays` |
+| `scenario_id` | `run-scenario` | — | UUID du scénario à lancer |
+| `timeout_sec` | non | `120` | Délai d’attente d’un statut terminal (`ok` / `fail` / `error`) |
 
 ## Sorties
 
@@ -80,11 +83,12 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret une seule fois) |
 | `sla_id` | `upsert-sla` |
+| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Sécurité
 
 - Ne jamais committer de jetons `sp_`. Utiliser `secrets.PATHLY_API_TOKEN`.
-- Moindre privilège : `scenarios:read`, `scenarios:write`, `alerting:write`, `sla:write` selon le besoin.
+- Moindre privilège : `scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write` selon le besoin.
 - `ping` appelle `GET /v1/usage`. Un HTTP `403` est un succès (jeton valide, portée `org:read` absente).
 - Les créations portent un en-tête `Idempotency-Key`.
 
