@@ -132,6 +132,32 @@ export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch):
     return;
   }
 
+  if (op === "assert-scenario") {
+    const scenarioId = (inputs.scenarioId ?? "").trim();
+    if (!scenarioId) {
+      throw new Error('Input "scenario_id" is required for assert-scenario');
+    }
+    const scenario = await client.getScenario(scenarioId);
+    const status =
+      typeof scenario.lastStatus === "string"
+        ? scenario.lastStatus
+        : typeof scenario.last_status === "string"
+          ? scenario.last_status
+          : "";
+    setOutput("scenario_id", String(scenario.id ?? scenarioId));
+    setOutput("run_status", status || "unknown");
+    setOutput("ok", status === "ok" ? "true" : "false");
+    console.log(
+      `Pathly assert-scenario ${scenario.name ?? scenarioId}: lastStatus=${status || "null"}`,
+    );
+    if (status !== "ok") {
+      throw new Error(
+        `Scenario ${scenarioId} lastStatus=${status || "null"} (expected ok)`,
+      );
+    }
+    return;
+  }
+
   if (op === "run-scenario" || op === "run-and-wait") {
     const scenarioId = (inputs.scenarioId ?? "").trim();
     if (!scenarioId) {
@@ -144,6 +170,9 @@ export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch):
     setOutput("run_status", status);
     setOutput("ok", status === "ok" ? "true" : "false");
     console.log(`Pathly run ${run.id} finished with status ${status}.`);
+    if (status !== "ok") {
+      throw new Error(`Pathly run ${run.id} status=${status || "unknown"} (expected ok)`);
+    }
   }
 }
 

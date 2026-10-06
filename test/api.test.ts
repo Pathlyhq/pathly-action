@@ -73,6 +73,7 @@ describe("parse helpers", () => {
     expect(parseOperation("upsert-sla")).toBe("upsert-sla");
     expect(parseOperation("run-scenario")).toBe("run-scenario");
     expect(parseOperation(" RUN-AND-WAIT ")).toBe("run-and-wait");
+    expect(parseOperation("assert-scenario")).toBe("assert-scenario");
   });
 
   it("parses timeout_sec", () => {
@@ -156,6 +157,20 @@ describe("scenarios", () => {
     const page = await client.listScenarios();
     expect(page.items).toEqual([]);
     expect(calls[0].url).toBe("https://api.test.pathlyhq.com/v1/scenarios");
+  });
+
+  it("getScenario fetches by id", async () => {
+    const { client, calls } = clientWith([
+      { body: { id: "sc-1", name: "Home", lastStatus: "ok" } },
+    ]);
+    const sc = await client.getScenario("sc-1");
+    expect(sc.lastStatus).toBe("ok");
+    expect(calls[0].url).toBe("https://api.test.pathlyhq.com/v1/scenarios/sc-1");
+  });
+
+  it("getScenario rejects empty id", async () => {
+    const { client } = clientWith([]);
+    await expect(client.getScenario("  ")).rejects.toThrow(/scenario_id is required/);
   });
 
   it("creates scenario with Idempotency-Key", async () => {

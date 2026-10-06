@@ -22,7 +22,7 @@ inputs:
   operation:
     description: >-
       One of ping | create-scenario | ensure-scenario | list-scenarios |
-      create-webhook | upsert-sla | run-scenario | run-and-wait
+      create-webhook | upsert-sla | assert-scenario | run-scenario | run-and-wait
     required: false
     default: "ping"
   scenario_json:
@@ -35,7 +35,7 @@ inputs:
     description: JSON body for upsert-sla (objectivePct + windowDays required)
     required: false
   scenario_id:
-    description: Scenario UUID for run-scenario / run-and-wait (POST /v1/scenarios/:id/run)
+    description: Scenario UUID for assert-scenario / run-scenario / run-and-wait
     required: false
   timeout_sec:
     description: How long to wait for a terminal run status (default 120)

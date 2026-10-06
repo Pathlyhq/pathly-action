@@ -230,6 +230,12 @@ export class PathlyClient {
     return { items: data.items ?? [], nextCursor: data.nextCursor ?? null };
   }
 
+  async getScenario(scenarioId: string): Promise<JsonObject> {
+    const id = scenarioId.trim();
+    if (!id) throw new Error("scenario_id is required");
+    return (await this.request("GET", `/v1/scenarios/${encodeURIComponent(id)}`)) as JsonObject;
+  }
+
   async createScenario(body: ScenarioCreateBody): Promise<JsonObject> {
     const payload = {
       type: "http" as const,
@@ -359,6 +365,7 @@ export type Operation =
   | "list-scenarios"
   | "create-webhook"
   | "upsert-sla"
+  | "assert-scenario"
   | "run-scenario"
   | "run-and-wait";
 
@@ -371,6 +378,7 @@ export function parseOperation(raw: string): Operation {
     "list-scenarios",
     "create-webhook",
     "upsert-sla",
+    "assert-scenario",
     "run-scenario",
     "run-and-wait",
   ];
