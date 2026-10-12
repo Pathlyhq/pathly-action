@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-10-12
+
+- `action.yml` description shortened under 125 characters so the Action can be listed on the GitHub Marketplace. No input or behavior change.
+
 ## 0.1.2 — 2026-10-06
 
 - Operation `assert-scenario`: GET scenario and fail the job if `lastStatus` is not `ok` (no new run).

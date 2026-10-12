@@ -1,9 +1,5 @@
 name: "Setup Pathly"
-description: >-
-  Verify a Pathly API token, manage Ping / Flow / Chain, and run one as a CI
-  gate (fails the job if the run is not ok). A Chain is create-scenario /
-  ensure-scenario with httpChain hops. Product https://pathlyhq.com · API docs
-  https://pathlyhq.com/en/developers · sign up https://pathlyhq.com/en/login?mode=signup
+description: "Fail a CI job when a Pathly Ping, Flow or Chain check is red. Verify the API token, create or run a check."
 author: "Simon Raynaud / keyral (Pathly)"
 branding:
   icon: activity
