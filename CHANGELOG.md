@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 - 2026-10-12
+
+- Runtime moved from Node.js 20 to Node.js 24 (`runs.using: node24`). GitHub deprecated Node.js 20 on Actions runners and showed a warning on every job. No input or behavior change.
+
 ## 0.1.3 — 2026-10-12
 
 - `action.yml` description shortened under 125 characters so the Action can be listed on the GitHub Marketplace. No input or behavior change.
