@@ -1,4 +1,4 @@
-# Same checks as .gitlab-ci.yml (test, build).
+# CI checks (test, build).
 name: CI
 
 on:
