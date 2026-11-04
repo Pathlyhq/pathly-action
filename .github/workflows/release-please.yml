@@ -1,7 +1,14 @@
 # Keeps a "chore(main): release x.y.z" PR up to date (CHANGELOG.md + version).
-# Merging it creates the vX.Y.Z tag and the GitHub release, then publishes
-# that tag. The publish job lives in this workflow (not on "push: tags")
-# because a tag created with GITHUB_TOKEN does not trigger other workflows.
+# Merging it creates the vX.Y.Z tag and the GitHub release (its notes come from
+# CHANGELOG.md), then moves the major tag. The tag job lives in this workflow
+# (not on "push: tags") because a tag created with GITHUB_TOKEN does not
+# trigger other workflows.
+#
+# Version tags (vX.Y.Z) are never moved or deleted: with immutable releases
+# enabled on the repository, GitHub locks them. Only the floating major tag
+# (v1, which also carries the 0.x releases) moves, here, and only forward.
+# See "Versions" in README.md.
+# Third-party actions are pinned by commit SHA (the comment gives the version).
 name: Release
 
 on:
@@ -9,26 +16,28 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # Users pin `uses: Pathlyhq/pathly-action@v1`: the major tag follows each
-  # release. dist/ is committed, so the tag needs no build.
+  # Users pin `uses: Pathlyhq/pathly-action@v1` (floating) or `@vX.Y.Z`
+  # (immutable). dist/ is committed and checked by CI, so the tag needs no build.
   move-major-tag:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
@@ -36,12 +45,28 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
       - env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
+          set -euo pipefail
+          if ! printf '%s' "${TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Unexpected release tag '${TAG}' (expected vX.Y.Z)."
+            exit 1
+          fi
           major="${TAG%%.*}"
-          git tag -f "${major}" "${TAG}"
+          # README.md already tells users to pin @v1: 0.x releases move v1 too.
+          if [ "${major}" = "v0" ]; then major="v1"; fi
+          target="$(git rev-parse "${TAG}^{commit}")"
+          # The major tag only moves forward, to a descendant of its current commit.
+          if current="$(git rev-parse -q --verify "refs/tags/${major}^{commit}")"; then
+            if ! git merge-base --is-ancestor "${current}" "${target}"; then
+              echo "::error::${TAG} does not descend from ${major}: the major tag is not moved."
+              exit 1
+            fi
+          fi
+          git tag -f "${major}" "${target}"
           git push -f origin "refs/tags/${major}"

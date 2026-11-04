@@ -89,6 +89,16 @@ Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 - Preferir menor privilegio (`scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write`).
 - `ping` llama `GET /v1/usage`. HTTP `403` se trata como éxito (token válido, falta `org:read`).
 - Las creaciones envían un encabezado `Idempotency-Key`.
+- El token se oculta en los registros del job en cuanto se lee, aunque no venga de `secrets.*`. La salida `webhook_secret` también se oculta.
+- La acción escribe un aviso en el registro cuando `api_url` apunta fuera de `pathlyhq.com` (salvo `localhost`), porque el token se envía a ese host.
+
+## Versiones
+
+- `@v1` sigue la última versión publicada (incluidas las 0.x). Solo avanza cuando se publica una versión.
+- `@vX.Y.Z` (por ejemplo `@v0.1.5`) no cambia nunca. Las nuevas versiones se publican como [versiones inmutables](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) de GitHub: su tag no se puede mover ni borrar. Las versiones publicadas antes de activar este ajuste (v0.1.4 y anteriores) no están bloqueadas por GitHub.
+- Para el anclaje más seguro, use el SHA del commit de una versión: `uses: pathlyhq/pathly-action@<sha-del-commit> # vX.Y.Z`.
+- Cada versión tiene sus notas, generadas desde [CHANGELOG.md](./CHANGELOG.md). Verifique una versión con `gh release verify vX.Y.Z -R pathlyhq/pathly-action`.
+- `dist/` es el código que ejecuta el runner. La CI lo reconstruye desde `src/` y falla si difiere de los archivos versionados.
 
 ## Desarrollo local
 

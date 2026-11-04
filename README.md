@@ -103,6 +103,16 @@ Run a scenario after deploy (CI goes red if the run is `fail` or `error`):
 - Prefer least privilege scopes (`scenarios:read` for list/ping-ish checks, `scenarios:write` to create, `runs:trigger` + `runs:read` to run and poll, `alerting:write` for webhooks, `sla:write` for targets).
 - `ping` calls `GET /v1/usage`. HTTP `403` is treated as success (token valid, missing `org:read`).
 - Creates send an `Idempotency-Key` header.
+- The token is masked in the job logs as soon as it is read, even when it does not come from `secrets.*`. The `webhook_secret` output is masked too.
+- The action writes a warning in the log when `api_url` points outside `pathlyhq.com` (except `localhost`), because the token is sent to that host.
+
+## Versions
+
+- `@v1` follows the latest release (0.x releases included). It only moves forward, when a release is published.
+- `@vX.Y.Z` (for example `@v0.1.5`) never changes. New releases are published as GitHub [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases): their tag cannot be moved or deleted. Releases published before this was turned on (v0.1.4 and earlier) are not locked by GitHub.
+- For the strongest pin, use the commit SHA of a release: `uses: pathlyhq/pathly-action@<commit-sha> # vX.Y.Z`.
+- Each release has notes generated from [CHANGELOG.md](./CHANGELOG.md). Check a release with `gh release verify vX.Y.Z -R pathlyhq/pathly-action`.
+- `dist/` is the code the runner executes. CI rebuilds it from `src/` and fails if it differs from the committed files.
 
 ## Local development
 
