@@ -7,6 +7,8 @@ import { appendFileSync } from "node:fs";
 import {
   PathlyClient,
   PathlyError,
+  apiUrlWarning,
+  maskCommand,
   parseJsonInput,
   parseOperation,
   parseTimeoutSec,
@@ -49,9 +51,17 @@ export type ActionInputs = {
   timeoutSec?: string;
 };
 
+/** Écrit une commande de workflow (`::add-mask::`, `::warning::`) sur la sortie standard. */
+function issueCommand(command: string | null): void {
+  if (command) process.stdout.write(command);
+}
+
 export function readInputsFromEnv(): ActionInputs {
+  // Masqué dès sa lecture, même s'il ne vient pas de `secrets.*` (équivalent de core.setSecret).
+  const apiToken = getInput("api_token", true);
+  issueCommand(maskCommand(apiToken));
   return {
-    apiToken: getInput("api_token", true),
+    apiToken,
     apiUrl: getInput("api_url") || "https://api.pathlyhq.com",
     operation: getInput("operation") || "ping",
     scenarioJson: getInput("scenario_json") || undefined,
@@ -63,6 +73,7 @@ export function readInputsFromEnv(): ActionInputs {
 }
 
 export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch): Promise<void> {
+  issueCommand(apiUrlWarning(inputs.apiUrl));
   const client = new PathlyClient({
     token: inputs.apiToken,
     apiUrl: inputs.apiUrl,
@@ -115,6 +126,7 @@ export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch):
     const hook = await client.createWebhook(body);
     setOutput("webhook_id", String(hook.id ?? ""));
     if (typeof hook.secret === "string") {
+      issueCommand(maskCommand(hook.secret));
       setOutput("webhook_secret", hook.secret);
     }
     console.log(`Created Pathly webhook ${hook.id}`);

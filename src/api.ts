@@ -111,6 +111,49 @@ export type SlaUpsertBody = {
   enabled?: boolean;
 };
 
+/** Domaine de l'API Pathly : le jeton ne doit partir que vers ce domaine. */
+export const PATHLY_API_DOMAIN = "pathlyhq.com";
+
+/** Échappement des données d'une commande de workflow (même règle que @actions/core). */
+export function escapeCommandData(value: string): string {
+  return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+/**
+ * Commande `::add-mask::` (équivalent de `core.setSecret`) : le runner remplace
+ * ensuite la valeur par `***` dans tous les journaux du job. `null` si vide.
+ */
+export function maskCommand(value: string | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  return `::add-mask::${escapeCommandData(v)}\n`;
+}
+
+/** true si l'hôte est `pathlyhq.com` ou l'un de ses sous-domaines. */
+export function isPathlyHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === PATHLY_API_DOMAIN || host.endsWith(`.${PATHLY_API_DOMAIN}`);
+}
+
+/**
+ * Commande `::warning::` quand `api_url` envoie le jeton hors de `pathlyhq.com`.
+ * `localhost` et `127.0.0.1` (serveur de test local) ne déclenchent rien.
+ * Seul le nom d'hôte est écrit dans le journal, jamais l'URL complète.
+ */
+export function apiUrlWarning(apiUrl: string): string | null {
+  let host: string;
+  try {
+    host = new URL(apiUrl.trim()).hostname.toLowerCase();
+  } catch {
+    return "::warning title=Pathly API URL::api_url is not a valid URL. The API token is only meant for https://api.pathlyhq.com.\n";
+  }
+  if (isPathlyHost(host) || host === "localhost" || host === "127.0.0.1") return null;
+  return (
+    `::warning title=Pathly API URL::api_url points to ${escapeCommandData(host)}, outside ${PATHLY_API_DOMAIN}. ` +
+    "Your Pathly API token is sent to this host. Remove api_url to use https://api.pathlyhq.com.\n"
+  );
+}
+
 function normalizeBaseUrl(apiUrl: string): string {
   const base = apiUrl.replace(/\/+$/, "");
   if (!/^https:\/\//.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(base)) {

@@ -4,7 +4,11 @@ import {
   DEFAULT_RUN_TIMEOUT_SEC,
   PathlyClient,
   PathlyError,
+  apiUrlWarning,
+  escapeCommandData,
+  isPathlyHost,
   isTerminalRunStatus,
+  maskCommand,
   parseJsonInput,
   parseOperation,
   parseTimeoutSec,
@@ -608,5 +612,50 @@ describe("error body handling", () => {
     } finally {
       if (cryptoDesc) Object.defineProperty(globalThis, "crypto", cryptoDesc);
     }
+  });
+});
+
+describe("log safety", () => {
+  it("escapes workflow command data", () => {
+    expect(escapeCommandData("a%b\r\nc")).toBe("a%25b%0D%0Ac");
+  });
+
+  it("builds an add-mask command for the token", () => {
+    expect(maskCommand(" sp_secret_value ")).toBe("::add-mask::sp_secret_value\n");
+    expect(maskCommand("sp_a%b\nc")).toBe("::add-mask::sp_a%25b%0Ac\n");
+  });
+
+  it("skips masking an empty value", () => {
+    expect(maskCommand("")).toBeNull();
+    expect(maskCommand("   ")).toBeNull();
+    expect(maskCommand(undefined)).toBeNull();
+  });
+
+  it("recognises pathlyhq.com hosts", () => {
+    expect(isPathlyHost("pathlyhq.com")).toBe(true);
+    expect(isPathlyHost("API.PathlyHQ.com")).toBe(true);
+    expect(isPathlyHost("api.pathlyhq.com.example.com")).toBe(false);
+    expect(isPathlyHost("notpathlyhq.com")).toBe(false);
+  });
+
+  it("does not warn for Pathly or local URLs", () => {
+    expect(apiUrlWarning("https://api.pathlyhq.com")).toBeNull();
+    expect(apiUrlWarning(" https://api.test.pathlyhq.com/ ")).toBeNull();
+    expect(apiUrlWarning("http://localhost:8084")).toBeNull();
+    expect(apiUrlWarning("http://127.0.0.1:8084")).toBeNull();
+  });
+
+  it("warns with the host only when the URL leaves pathlyhq.com", () => {
+    const w = apiUrlWarning("https://user:pw@api.pathlyhq.com.example.com/v1?x=1");
+    expect(w).toMatch(/^::warning title=Pathly API URL::/);
+    expect(w).toContain("api.pathlyhq.com.example.com");
+    expect(w).not.toContain("user");
+    expect(w).not.toContain("pw@");
+    expect(w).not.toContain("x=1");
+    expect(w?.endsWith("\n")).toBe(true);
+  });
+
+  it("warns when api_url cannot be parsed", () => {
+    expect(apiUrlWarning("https://")).toMatch(/not a valid URL/);
   });
 });
