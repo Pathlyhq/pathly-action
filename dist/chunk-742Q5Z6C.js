@@ -38,6 +38,31 @@ function parseTimeoutSec(raw, fallback = DEFAULT_RUN_TIMEOUT_SEC) {
   }
   return Math.min(Math.floor(n), 3600);
 }
+var PATHLY_API_DOMAIN = "pathlyhq.com";
+function escapeCommandData(value) {
+  return value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+function maskCommand(value) {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  return `::add-mask::${escapeCommandData(v)}
+`;
+}
+function isPathlyHost(hostname) {
+  const host = hostname.toLowerCase();
+  return host === PATHLY_API_DOMAIN || host.endsWith(`.${PATHLY_API_DOMAIN}`);
+}
+function apiUrlWarning(apiUrl) {
+  let host;
+  try {
+    host = new URL(apiUrl.trim()).hostname.toLowerCase();
+  } catch {
+    return "::warning title=Pathly API URL::api_url is not a valid URL. The API token is only meant for https://api.pathlyhq.com.\n";
+  }
+  if (isPathlyHost(host) || host === "localhost" || host === "127.0.0.1") return null;
+  return `::warning title=Pathly API URL::api_url points to ${escapeCommandData(host)}, outside ${PATHLY_API_DOMAIN}. Your Pathly API token is sent to this host. Remove api_url to use https://api.pathlyhq.com.
+`;
+}
 function normalizeBaseUrl(apiUrl) {
   const base = apiUrl.replace(/\/+$/, "");
   if (!/^https:\/\//.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(base)) {
@@ -283,8 +308,13 @@ export {
   DEFAULT_POLL_INTERVAL_MS,
   isTerminalRunStatus,
   parseTimeoutSec,
+  PATHLY_API_DOMAIN,
+  escapeCommandData,
+  maskCommand,
+  isPathlyHost,
+  apiUrlWarning,
   PathlyClient,
   parseOperation,
   parseJsonInput
 };
-//# sourceMappingURL=chunk-GYRFWAK5.js.map
+//# sourceMappingURL=chunk-742Q5Z6C.js.map

@@ -91,6 +91,16 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 - Moindre privilège : `scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write` selon le besoin.
 - `ping` appelle `GET /v1/usage`. Un HTTP `403` est un succès (jeton valide, portée `org:read` absente).
 - Les créations portent un en-tête `Idempotency-Key`.
+- Le jeton est masqué dans les journaux du job dès sa lecture, même s'il ne vient pas de `secrets.*`. La sortie `webhook_secret` est masquée aussi.
+- L'action écrit un avertissement dans le journal quand `api_url` pointe hors de `pathlyhq.com` (sauf `localhost`), car le jeton part vers cet hôte.
+
+## Versions
+
+- `@v1` suit la dernière version publiée (versions 0.x comprises). Il n'avance qu'à la publication d'une version.
+- `@vX.Y.Z` (par exemple `@v0.1.5`) ne change jamais. Les nouvelles versions sont publiées en [versions immuables](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) GitHub : leur tag ne peut être ni déplacé ni supprimé. Les versions publiées avant ce réglage (v0.1.4 et antérieures) ne sont pas verrouillées par GitHub.
+- Pour l'épinglage le plus sûr, utilisez le SHA du commit d'une version : `uses: pathlyhq/pathly-action@<sha-du-commit> # vX.Y.Z`.
+- Chaque version a ses notes, tirées de [CHANGELOG.md](./CHANGELOG.md). Vérifiez une version avec `gh release verify vX.Y.Z -R pathlyhq/pathly-action`.
+- `dist/` est le code exécuté par le runner. La CI le reconstruit depuis `src/` et échoue s'il diffère des fichiers versionnés.
 
 ## Développement local
 

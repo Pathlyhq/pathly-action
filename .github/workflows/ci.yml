@@ -1,4 +1,5 @@
-# CI checks (test, build).
+# CI checks: tests, build, and dist/ up to date with src/.
+# Third-party actions are pinned by commit SHA (the comment gives the version).
 name: CI
 
 on:
@@ -17,11 +18,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
-          cache: npm
+          persist-credentials: false
+      # Same major version as `runs.using` in action.yml.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: action.yml runs on Node 24
+        run: grep -Eq '^[[:space:]]+using:[[:space:]]+"?node24"?[[:space:]]*$' action.yml
       - run: npm ci --no-audit --fund=false
       - run: npm test
       - run: npm run build
+      # Users run dist/index.js, not src/. A change to dist/ alone would skip
+      # review: the rebuilt dist/ must be identical to the committed one.
+      - name: dist/ matches src/
+        run: |
+          if ! git diff --exit-code --stat -- dist || [ -n "$(git status --porcelain --untracked-files=all -- dist)" ]; then
+            git status --short -- dist
+            echo "::error title=dist/ out of date::dist/ does not match src/. Run npm ci && npm run build, then commit dist/."
+            exit 1
+          fi

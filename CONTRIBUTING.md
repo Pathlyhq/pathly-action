@@ -14,6 +14,7 @@ Thanks for helping improve Pathly integrations.
 2. Fork, branch from `main`, keep commits focused
 3. Add or update unit tests (packages that require 100% coverage must stay at 100%)
 4. Run the project test suite locally before opening a pull request
+   - This action runs `dist/index.js`: after a change in `src/`, run `npm run build` and commit `dist/`. CI rebuilds it and fails if it differs
 5. Link related docs or examples when behaviour changes
 
 ## Auth env var

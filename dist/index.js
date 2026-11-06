@@ -1,10 +1,12 @@
 import {
   PathlyClient,
   PathlyError,
+  apiUrlWarning,
+  maskCommand,
   parseJsonInput,
   parseOperation,
   parseTimeoutSec
-} from "./chunk-GYRFWAK5.js";
+} from "./chunk-742Q5Z6C.js";
 
 // src/main.ts
 import { appendFileSync } from "fs";
@@ -34,9 +36,14 @@ ${delim}
   process.stdout.write(`pathly-output ${name}=${value.length > 200 ? `${value.slice(0, 200)}\u2026` : value}
 `);
 }
+function issueCommand(command) {
+  if (command) process.stdout.write(command);
+}
 function readInputsFromEnv() {
+  const apiToken = getInput("api_token", true);
+  issueCommand(maskCommand(apiToken));
   return {
-    apiToken: getInput("api_token", true),
+    apiToken,
     apiUrl: getInput("api_url") || "https://api.pathlyhq.com",
     operation: getInput("operation") || "ping",
     scenarioJson: getInput("scenario_json") || void 0,
@@ -47,6 +54,7 @@ function readInputsFromEnv() {
   };
 }
 async function runAction(inputs, fetchImpl) {
+  issueCommand(apiUrlWarning(inputs.apiUrl));
   const client = new PathlyClient({
     token: inputs.apiToken,
     apiUrl: inputs.apiUrl,
@@ -95,6 +103,7 @@ async function runAction(inputs, fetchImpl) {
     const hook = await client.createWebhook(body);
     setOutput("webhook_id", String(hook.id ?? ""));
     if (typeof hook.secret === "string") {
+      issueCommand(maskCommand(hook.secret));
       setOutput("webhook_secret", hook.secret);
     }
     console.log(`Created Pathly webhook ${hook.id}`);

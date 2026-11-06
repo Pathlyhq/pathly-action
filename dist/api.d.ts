@@ -74,6 +74,23 @@ type SlaUpsertBody = {
     warnAtBudgetRatio?: number;
     enabled?: boolean;
 };
+/** Domaine de l'API Pathly : le jeton ne doit partir que vers ce domaine. */
+declare const PATHLY_API_DOMAIN = "pathlyhq.com";
+/** Échappement des données d'une commande de workflow (même règle que @actions/core). */
+declare function escapeCommandData(value: string): string;
+/**
+ * Commande `::add-mask::` (équivalent de `core.setSecret`) : le runner remplace
+ * ensuite la valeur par `***` dans tous les journaux du job. `null` si vide.
+ */
+declare function maskCommand(value: string | undefined): string | null;
+/** true si l'hôte est `pathlyhq.com` ou l'un de ses sous-domaines. */
+declare function isPathlyHost(hostname: string): boolean;
+/**
+ * Commande `::warning::` quand `api_url` envoie le jeton hors de `pathlyhq.com`.
+ * `localhost` et `127.0.0.1` (serveur de test local) ne déclenchent rien.
+ * Seul le nom d'hôte est écrit dans le journal, jamais l'URL complète.
+ */
+declare function apiUrlWarning(apiUrl: string): string | null;
 declare class PathlyClient {
     private readonly token;
     private readonly baseUrl;
@@ -132,4 +149,4 @@ type Operation = "ping" | "create-scenario" | "ensure-scenario" | "list-scenario
 declare function parseOperation(raw: string): Operation;
 declare function parseJsonInput(raw: string | undefined, label: string): JsonObject | undefined;
 
-export { DEFAULT_API_URL, DEFAULT_POLL_INTERVAL_MS, DEFAULT_RUN_TIMEOUT_SEC, DEFAULT_USER_AGENT, type FetchLike, type JsonObject, type Operation, PathlyClient, type PathlyClientOptions, PathlyError, type RunRecord, type RunWaitOptions, type ScenarioCreateBody, type SlaUpsertBody, TERMINAL_RUN_STATUSES, type TerminalRunStatus, VERSION, type WebhookCreateBody, isTerminalRunStatus, parseJsonInput, parseOperation, parseTimeoutSec };
+export { DEFAULT_API_URL, DEFAULT_POLL_INTERVAL_MS, DEFAULT_RUN_TIMEOUT_SEC, DEFAULT_USER_AGENT, type FetchLike, type JsonObject, type Operation, PATHLY_API_DOMAIN, PathlyClient, type PathlyClientOptions, PathlyError, type RunRecord, type RunWaitOptions, type ScenarioCreateBody, type SlaUpsertBody, TERMINAL_RUN_STATUSES, type TerminalRunStatus, VERSION, type WebhookCreateBody, apiUrlWarning, escapeCommandData, isPathlyHost, isTerminalRunStatus, maskCommand, parseJsonInput, parseOperation, parseTimeoutSec };

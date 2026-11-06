@@ -1,0 +1,3 @@
+# dist/ is the code the runner executes: it is committed and checked by CI.
+* text=auto eol=lf
+dist/** linguist-generated=true
