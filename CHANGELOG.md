@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/Pathlyhq/pathly-action/compare/v0.1.4...v0.1.5) (2026-11-06)
+
+
+### Bug Fixes
+
+* jeton masqué, dist vérifié en CI, Node 24 et versions immuables ([#6](https://github.com/Pathlyhq/pathly-action/issues/6)) ([22d7a3c](https://github.com/Pathlyhq/pathly-action/commit/22d7a3c647bae18e697817fe752cab69b50149d0))
+
 ## 0.1.4 - 2026-10-12
 
 - Runtime moved from Node.js 20 to Node.js 24 (`runs.using: node24`). GitHub deprecated Node.js 20 on Actions runners and showed a warning on every job. No input or behavior change.
