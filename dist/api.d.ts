@@ -3,8 +3,13 @@
  * Auth: Bearer sp_… — never log the token.
  */
 declare const DEFAULT_API_URL = "https://api.pathlyhq.com";
-declare const VERSION = "0.1.1";
-declare const DEFAULT_USER_AGENT = "pathly-github-action/0.1.1";
+/**
+ * Version lue dans package.json à l'exécution : release-please ne touche que
+ * package.json, et dist/ reste identique à src/ sur la PR de version.
+ */
+declare function readVersion(packageJson: URL): string;
+declare const VERSION: string;
+declare const DEFAULT_USER_AGENT: string;
 type FetchLike = typeof globalThis.fetch;
 declare class PathlyError extends Error {
     readonly status: number;
@@ -46,6 +51,14 @@ type RunWaitOptions = {
     sleep?: (ms: number) => Promise<void>;
     now?: () => number;
 };
+/**
+ * Délai dépassé avant un statut terminal. `runId` porte l'identifiant du run
+ * s'il a été vu avant la fin du délai.
+ */
+declare class RunTimeoutError extends Error {
+    readonly runId?: string;
+    constructor(message: string, runId?: string);
+}
 declare function isTerminalRunStatus(status: string): status is TerminalRunStatus;
 declare function parseTimeoutSec(raw: string | undefined, fallback?: number): number;
 type ScenarioCreateBody = {
@@ -141,7 +154,8 @@ declare class PathlyClient {
     }>;
     /**
      * POST /run puis poll GET /v1/runs jusqu'à un statut terminal (`ok` / `fail` / `error`).
-     * Lève si le run n'est pas `ok` ou si le délai expire — la CI passe au rouge.
+     * Rend le run quel que soit son statut final : l'appelant décide de l'échec.
+     * Lève `RunTimeoutError` si le délai expire.
      */
     runAndWait(scenarioId: string, options?: RunWaitOptions): Promise<RunRecord>;
 }
@@ -149,4 +163,4 @@ type Operation = "ping" | "create-scenario" | "ensure-scenario" | "list-scenario
 declare function parseOperation(raw: string): Operation;
 declare function parseJsonInput(raw: string | undefined, label: string): JsonObject | undefined;
 
-export { DEFAULT_API_URL, DEFAULT_POLL_INTERVAL_MS, DEFAULT_RUN_TIMEOUT_SEC, DEFAULT_USER_AGENT, type FetchLike, type JsonObject, type Operation, PATHLY_API_DOMAIN, PathlyClient, type PathlyClientOptions, PathlyError, type RunRecord, type RunWaitOptions, type ScenarioCreateBody, type SlaUpsertBody, TERMINAL_RUN_STATUSES, type TerminalRunStatus, VERSION, type WebhookCreateBody, apiUrlWarning, escapeCommandData, isPathlyHost, isTerminalRunStatus, maskCommand, parseJsonInput, parseOperation, parseTimeoutSec };
+export { DEFAULT_API_URL, DEFAULT_POLL_INTERVAL_MS, DEFAULT_RUN_TIMEOUT_SEC, DEFAULT_USER_AGENT, type FetchLike, type JsonObject, type Operation, PATHLY_API_DOMAIN, PathlyClient, type PathlyClientOptions, PathlyError, type RunRecord, RunTimeoutError, type RunWaitOptions, type ScenarioCreateBody, type SlaUpsertBody, TERMINAL_RUN_STATUSES, type TerminalRunStatus, VERSION, type WebhookCreateBody, apiUrlWarning, escapeCommandData, isPathlyHost, isTerminalRunStatus, maskCommand, parseJsonInput, parseOperation, parseTimeoutSec, readVersion };

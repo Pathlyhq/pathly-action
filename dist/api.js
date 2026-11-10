@@ -6,6 +6,7 @@ import {
   PATHLY_API_DOMAIN,
   PathlyClient,
   PathlyError,
+  RunTimeoutError,
   TERMINAL_RUN_STATUSES,
   VERSION,
   apiUrlWarning,
@@ -15,8 +16,9 @@ import {
   maskCommand,
   parseJsonInput,
   parseOperation,
-  parseTimeoutSec
-} from "./chunk-742Q5Z6C.js";
+  parseTimeoutSec,
+  readVersion
+} from "./chunk-S6ZAVKKJ.js";
 export {
   DEFAULT_API_URL,
   DEFAULT_POLL_INTERVAL_MS,
@@ -25,6 +27,7 @@ export {
   PATHLY_API_DOMAIN,
   PathlyClient,
   PathlyError,
+  RunTimeoutError,
   TERMINAL_RUN_STATUSES,
   VERSION,
   apiUrlWarning,
@@ -34,6 +37,7 @@ export {
   maskCommand,
   parseJsonInput,
   parseOperation,
-  parseTimeoutSec
+  parseTimeoutSec,
+  readVersion
 };
 //# sourceMappingURL=api.js.map

@@ -102,7 +102,7 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret une seule fois) |
 | `sla_id` | `upsert-sla` |
 | `scenario_id`, `run_status`, `ok` | `assert-scenario` (`run_status` est le dernier statut, `unknown` si le scénario n’a jamais tourné) |
-| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
+| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait`. Écrites avant l’échec du job : sur un run `fail` ou `error`, une étape suivante en `if: failure()` peut les lire. Sur un délai dépassé, `ok` vaut `false` et `run_id` est écrit si le run avait démarré |
 
 ## Sécurité
 

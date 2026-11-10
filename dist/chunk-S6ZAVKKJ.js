@@ -1,6 +1,15 @@
 // src/api.ts
+import { readFileSync } from "fs";
 var DEFAULT_API_URL = "https://api.pathlyhq.com";
-var VERSION = "0.1.1";
+function readVersion(packageJson) {
+  try {
+    const parsed = JSON.parse(readFileSync(packageJson, "utf8"));
+    return typeof parsed.version === "string" && parsed.version ? parsed.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+var VERSION = readVersion(new URL("../package.json", import.meta.url));
 var DEFAULT_USER_AGENT = `pathly-github-action/${VERSION}`;
 var PathlyError = class extends Error {
   status;
@@ -26,6 +35,14 @@ var PathlyError = class extends Error {
 var TERMINAL_RUN_STATUSES = ["ok", "fail", "error"];
 var DEFAULT_RUN_TIMEOUT_SEC = 120;
 var DEFAULT_POLL_INTERVAL_MS = 2e3;
+var RunTimeoutError = class extends Error {
+  runId;
+  constructor(message, runId) {
+    super(message);
+    this.name = "RunTimeoutError";
+    this.runId = runId;
+  }
+};
 var defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function isTerminalRunStatus(status) {
   return TERMINAL_RUN_STATUSES.includes(status);
@@ -222,7 +239,8 @@ var PathlyClient = class {
   }
   /**
    * POST /run puis poll GET /v1/runs jusqu'à un statut terminal (`ok` / `fail` / `error`).
-   * Lève si le run n'est pas `ok` ou si le délai expire — la CI passe au rouge.
+   * Rend le run quel que soit son statut final : l'appelant décide de l'échec.
+   * Lève `RunTimeoutError` si le délai expire.
    */
   async runAndWait(scenarioId, options = {}) {
     const timeoutSec = options.timeoutSec ?? DEFAULT_RUN_TIMEOUT_SEC;
@@ -239,23 +257,18 @@ var PathlyClient = class {
     );
     await this.runScenario(scenarioId);
     let lastError;
+    let runId;
     while (now() < deadline) {
       try {
         const page = await this.listRuns({ scenarioId, limit: 20 });
         const fresh = page.items.find((r) => typeof r.id === "string" && r.id && !seen.has(r.id));
         if (fresh?.id) {
+          runId = String(fresh.id);
           const run = await this.getRun(String(fresh.id));
           const status = typeof run.status === "string" ? run.status : "";
-          if (isTerminalRunStatus(status)) {
-            if (status !== "ok") {
-              const detail = typeof run.message === "string" && run.message ? `: ${run.message}` : "";
-              throw new Error(`Pathly run ${run.id} ended with status ${status}${detail}`);
-            }
-            return run;
-          }
+          if (isTerminalRunStatus(status)) return run;
         }
       } catch (e) {
-        if (e instanceof Error && /ended with status/.test(e.message)) throw e;
         if (e instanceof PathlyError && e.notFound) {
           lastError = e;
         } else {
@@ -266,8 +279,9 @@ var PathlyClient = class {
       await sleep(pollMs);
     }
     const hint = lastError instanceof Error ? ` (${lastError.message})` : "";
-    throw new Error(
-      `Pathly run for scenario ${scenarioId} did not finish within ${timeoutSec}s${hint}`
+    throw new RunTimeoutError(
+      `Pathly run for scenario ${scenarioId} did not finish within ${timeoutSec}s${hint}`,
+      runId
     );
   }
 };
@@ -300,12 +314,14 @@ function parseJsonInput(raw, label) {
 
 export {
   DEFAULT_API_URL,
+  readVersion,
   VERSION,
   DEFAULT_USER_AGENT,
   PathlyError,
   TERMINAL_RUN_STATUSES,
   DEFAULT_RUN_TIMEOUT_SEC,
   DEFAULT_POLL_INTERVAL_MS,
+  RunTimeoutError,
   isTerminalRunStatus,
   parseTimeoutSec,
   PATHLY_API_DOMAIN,
@@ -317,4 +333,4 @@ export {
   parseOperation,
   parseJsonInput
 };
-//# sourceMappingURL=chunk-742Q5Z6C.js.map
+//# sourceMappingURL=chunk-S6ZAVKKJ.js.map
