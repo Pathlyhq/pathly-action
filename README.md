@@ -20,12 +20,13 @@ Marketplace-ready GitHub Action to wire [Pathly](https://pathlyhq.com) synthetic
 
 ## What it does
 
-`pathlyhq/setup-pathly` verifies your Pathly API token (`sp_…`) against `https://api.pathlyhq.com`, then optionally:
+`pathlyhq/pathly-action` verifies your Pathly API token (`sp_…`) against `https://api.pathlyhq.com`, then optionally:
 
 - creates or ensures an HTTP monitoring scenario
 - lists scenarios
 - creates a signed outbound webhook
 - upserts an availability (SLA) target
+- asserts the last status of a scenario, without starting a run
 - runs a scenario and fails the job if the run is not `ok`
 
 Use it as a deploy gate, a post-merge smoke, or to keep Pathly-as-code in sync with GitHub Actions.
@@ -73,17 +74,34 @@ Run a scenario after deploy (CI goes red if the run is `fail` or `error`):
 
 `run-and-wait` is an alias of `run-scenario`. The key needs scope `runs:trigger` (and `runs:read` to poll). Full example: [`examples/workflow.yml`](./examples/workflow.yml).
 
+Assert the last status of a scenario after your test job (CI goes red if it is not `ok`):
+
+```yaml
+pathly:
+  needs: test
+  runs-on: ubuntu-latest
+  steps:
+    - name: Assert checkout is green
+      uses: pathlyhq/pathly-action@v1
+      with:
+        api_token: ${{ secrets.PATHLY_API_TOKEN }}
+        operation: assert-scenario
+        scenario_id: ${{ vars.PATHLY_CHECKOUT_SCENARIO_ID }}
+```
+
+`assert-scenario` reads the scenario (`GET /v1/scenarios/{id}`) and fails the job when its last status is not `ok`. It starts no run, so it uses none of your plan's runs, and the key only needs scope `scenarios:read`. `run-scenario` starts a new run and waits for its result: use it after a deploy, when you need a result for the version you just shipped.
+
 ## Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `api_token` | yes | — | Pathly API token (`sp_…`). Store in GitHub Secrets. |
 | `api_url` | no | `https://api.pathlyhq.com` | API base URL |
-| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
+| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `assert-scenario` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | for scenario ops | — | JSON with at least `name` and `url` |
 | `webhook_json` | for webhook | — | JSON with `url` and `events` |
 | `sla_json` | for SLA | — | JSON with `objectivePct` and `windowDays` |
-| `scenario_id` | for `run-scenario` | — | Scenario UUID to trigger |
+| `scenario_id` | for `assert-scenario`, `run-scenario`, `run-and-wait` | — | Scenario UUID to assert or to trigger |
 | `timeout_sec` | no | `120` | Seconds to wait for a terminal run (`ok` / `fail` / `error`) |
 
 ## Outputs
@@ -95,12 +113,14 @@ Run a scenario after deploy (CI goes red if the run is `fail` or `error`):
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret returned once) |
 | `sla_id` | `upsert-sla` |
+| `scenario_id`, `run_status`, `ok` | `assert-scenario` (`run_status` is the last status, `unknown` if the scenario never ran) |
 | `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Security
 
 - Never commit `sp_` tokens. Use `secrets.PATHLY_API_TOKEN`.
 - Prefer least privilege scopes (`scenarios:read` for list/ping-ish checks, `scenarios:write` to create, `runs:trigger` + `runs:read` to run and poll, `alerting:write` for webhooks, `sla:write` for targets).
+- `assert-scenario` only needs `scenarios:read`: it reads the scenario and starts no run.
 - `ping` calls `GET /v1/usage`. HTTP `403` is treated as success (token valid, missing `org:read`).
 - Creates send an `Idempotency-Key` header.
 - The token is masked in the job logs as soon as it is read, even when it does not come from `secrets.*`. The `webhook_secret` output is masked too.
@@ -128,7 +148,7 @@ npm run build
 | Package | Role |
 |---|---|
 | [pathly-gitlab-ci](https://github.com/pathlyhq/pathly-gitlab-ci) | GitLab CI templates |
-| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathlyhq/sdk |
+| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathly/sdk |
 | [pathly-sdk-python](https://github.com/pathlyhq/pathly-sdk-python) | Python SDK |
 | [pathly-postman](https://github.com/pathlyhq/pathly-postman) | Postman collection |
 | [Pathly product](https://pathlyhq.com) | [Pathly monitoring](https://pathlyhq.com) |

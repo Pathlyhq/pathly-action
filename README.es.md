@@ -18,12 +18,13 @@ Action de GitHub lista para el Marketplace que conecta el monitoreo sintético d
 
 ## Qué hace
 
-`pathlyhq/setup-pathly` verifica su token de API Pathly (`sp_…`) contra `https://api.pathlyhq.com` y, opcionalmente:
+`pathlyhq/pathly-action` verifica su token de API Pathly (`sp_…`) contra `https://api.pathlyhq.com` y, opcionalmente:
 
 - crea o asegura un escenario HTTP
 - lista escenarios
 - crea un webhook de salida firmado
 - hace upsert de un objetivo de disponibilidad (SLA)
+- comprueba el último estado de un escenario, sin lanzar ningún run
 - ejecuta un escenario y falla el job si el run no es `ok`
 
 Úselo como puerta de despliegue, smoke post-merge, o para mantener Pathly-as-code sincronizado con GitHub Actions.
@@ -57,6 +58,23 @@ Asegurar un escenario HTTP tras el despliegue:
       }
 ```
 
+Comprobar el último estado de un escenario después del job de tests (la CI se pone en rojo si no es `ok`):
+
+```yaml
+pathly:
+  needs: test
+  runs-on: ubuntu-latest
+  steps:
+    - name: Assert checkout is green
+      uses: pathlyhq/pathly-action@v1
+      with:
+        api_token: ${{ secrets.PATHLY_API_TOKEN }}
+        operation: assert-scenario
+        scenario_id: ${{ vars.PATHLY_CHECKOUT_SCENARIO_ID }}
+```
+
+`assert-scenario` lee el escenario (`GET /v1/scenarios/{id}`) y falla el job si su último estado no es `ok`. No lanza ningún run: no consume ninguna ejecución de su plan, y la clave solo necesita el alcance `scenarios:read`. `run-scenario` lanza un run nuevo y espera su resultado: úselo después de un despliegue, cuando necesite un resultado sobre la versión que acaba de publicar. Su clave necesita los alcances `runs:trigger` y `runs:read`.
+
 Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 
 ## Entradas
@@ -65,11 +83,11 @@ Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 |---------|-------------|-------------|-------------|
 | `api_token` | sí | — | Token Pathly (`sp_…`). Guardarlo en GitHub Secrets. |
 | `api_url` | no | `https://api.pathlyhq.com` | URL base de la API |
-| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
+| `operation` | no | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `assert-scenario` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | ops de escenario | — | JSON con al menos `name` y `url` |
 | `webhook_json` | webhook | — | JSON con `url` y `events` |
 | `sla_json` | SLA | — | JSON con `objectivePct` y `windowDays` |
-| `scenario_id` | `run-scenario` | — | UUID del escenario a lanzar |
+| `scenario_id` | `assert-scenario`, `run-scenario`, `run-and-wait` | — | UUID del escenario a comprobar o a lanzar |
 | `timeout_sec` | no | `120` | Espera de un estado terminal (`ok` / `fail` / `error`) |
 
 ## Salidas
@@ -81,12 +99,14 @@ Ejemplo completo: [`examples/workflow.yml`](./examples/workflow.yml).
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secreto una sola vez) |
 | `sla_id` | `upsert-sla` |
+| `scenario_id`, `run_status`, `ok` | `assert-scenario` (`run_status` es el último estado, `unknown` si el escenario nunca se ejecutó) |
 | `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Seguridad
 
 - Nunca haga commit de tokens `sp_`. Use `secrets.PATHLY_API_TOKEN`.
 - Preferir menor privilegio (`scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write`).
+- `assert-scenario` solo necesita el alcance `scenarios:read`: lee el escenario y no lanza ningún run.
 - `ping` llama `GET /v1/usage`. HTTP `403` se trata como éxito (token válido, falta `org:read`).
 - Las creaciones envían un encabezado `Idempotency-Key`.
 - El token se oculta en los registros del job en cuanto se lee, aunque no venga de `secrets.*`. La salida `webhook_secret` también se oculta.
@@ -114,7 +134,7 @@ npm run build
 | Package | Role |
 |---|---|
 | [pathly-gitlab-ci](https://github.com/pathlyhq/pathly-gitlab-ci) | GitLab CI templates |
-| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathlyhq/sdk |
+| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathly/sdk |
 | [pathly-sdk-python](https://github.com/pathlyhq/pathly-sdk-python) | Python SDK |
 | [pathly-postman](https://github.com/pathlyhq/pathly-postman) | Postman collection |
 | [Pathly product](https://pathlyhq.com) | [Pathly monitoring](https://pathlyhq.com) |
