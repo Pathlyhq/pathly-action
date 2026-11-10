@@ -114,7 +114,7 @@ pathly:
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret returned once) |
 | `sla_id` | `upsert-sla` |
 | `scenario_id`, `run_status`, `ok` | `assert-scenario` (`run_status` is the last status, `unknown` if the scenario never ran) |
-| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
+| `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait`. Written before the job fails: on a `fail` or `error` run, a later step with `if: failure()` can read them. On a timeout, `ok` is `false` and `run_id` is set when the run had started |
 
 ## Security
 

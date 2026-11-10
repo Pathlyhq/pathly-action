@@ -40,11 +40,14 @@ inputs:
 
 outputs:
   ok:
-    description: true when ping succeeds, or when run-scenario finishes with status ok
+    description: >-
+      true when ping succeeds, when assert-scenario reads a last status ok, or
+      when run-scenario / run-and-wait finishes with status ok. false otherwise,
+      written before the job fails
   plan_id:
     description: Plan id returned by GET /v1/usage when available
   scenario_id:
-    description: Scenario id after create or ensure
+    description: Scenario id after create-scenario, ensure-scenario or assert-scenario
   created:
     description: true if a scenario was created by ensure-scenario / create-scenario
   count:
@@ -58,9 +61,13 @@ outputs:
   sla_id:
     description: SLA target id after upsert-sla
   run_id:
-    description: Run id after run-scenario / run-and-wait
+    description: >-
+      Run id after run-scenario / run-and-wait, also written when the run fails
+      or when timeout_sec is reached after the run started
   run_status:
-    description: Terminal run status (ok | fail | error)
+    description: >-
+      Terminal run status (ok | fail | error) after run-scenario / run-and-wait,
+      or the scenario's last status after assert-scenario
 
 runs:
   using: node24

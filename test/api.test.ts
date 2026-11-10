@@ -4,6 +4,7 @@ import {
   DEFAULT_RUN_TIMEOUT_SEC,
   PathlyClient,
   PathlyError,
+  VERSION,
   apiUrlWarning,
   escapeCommandData,
   isPathlyHost,
@@ -12,7 +13,23 @@ import {
   parseJsonInput,
   parseOperation,
   parseTimeoutSec,
+  readVersion,
 } from "../src/api.js";
+
+describe("version", () => {
+  it("VERSION is the package.json version", async () => {
+    const pkg = JSON.parse(
+      (await import("node:fs")).readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(VERSION).toBe(pkg.version);
+    expect(VERSION).toMatch(/^[0-9]+[.][0-9]+[.][0-9]+$/);
+  });
+
+  it("readVersion falls back to unknown", () => {
+    expect(readVersion(new URL("./missing.json", import.meta.url))).toBe("unknown");
+    expect(readVersion(new URL("../tsconfig.json", import.meta.url))).toBe("unknown");
+  });
+});
 
 type Call = { url: string; init: RequestInit };
 
@@ -277,7 +294,7 @@ describe("runs", () => {
     expect(calls[3].url).toContain(`/v1/runs/${runId}`);
   });
 
-  it("runAndWait fails the action when status is fail", async () => {
+  it("runAndWait returns the run when status is fail", async () => {
     const { client } = clientWith([
       { body: { items: [] } },
       { body: { ok: true, queued: true, jobId: "job-1" } },
@@ -286,10 +303,10 @@ describe("runs", () => {
     ]);
     await expect(
       client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
-    ).rejects.toThrow(/ended with status fail: HTTP 500/);
+    ).resolves.toMatchObject({ id: runId, status: "fail", message: "HTTP 500" });
   });
 
-  it("runAndWait fails when status is error without a message", async () => {
+  it("runAndWait returns the run when status is error", async () => {
     const { client } = clientWith([
       { body: { items: [] } },
       { body: { ok: true, queued: true, jobId: "job-1" } },
@@ -298,7 +315,7 @@ describe("runs", () => {
     ]);
     await expect(
       client.runAndWait(scenarioId, { timeoutSec: 5, pollIntervalMs: 1, sleep: async () => undefined }),
-    ).rejects.toThrow(/ended with status error$/);
+    ).resolves.toMatchObject({ id: runId, status: "error" });
   });
 
   it("runAndWait keeps polling after 404 then succeeds", async () => {
@@ -345,7 +362,11 @@ describe("runs", () => {
           t += ms + 2_000;
         },
       }),
-    ).rejects.toThrow(/did not finish within 2s/);
+    ).rejects.toMatchObject({
+      name: "RunTimeoutError",
+      message: expect.stringMatching(/did not finish within 2s/),
+      runId: undefined,
+    });
   });
 
   it("runAndWait includes the last 404 hint on timeout", async () => {
@@ -365,7 +386,11 @@ describe("runs", () => {
           t += ms + 2_000;
         },
       }),
-    ).rejects.toThrow(/did not finish within 1s \(Exécution introuvable/);
+    ).rejects.toMatchObject({
+      name: "RunTimeoutError",
+      message: expect.stringMatching(/did not finish within 1s \(Exécution introuvable/),
+      runId,
+    });
   });
 
   it("runAndWait ignores prior items without a string id", async () => {
@@ -569,7 +594,7 @@ describe("error body handling", () => {
       await client.listScenarios();
       expect(fetchOnce).toHaveBeenCalled();
       const headers = (fetchOnce.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-      expect(headers["user-agent"]).toBe("pathly-github-action/0.1.1");
+      expect(headers["user-agent"]).toBe(`pathly-github-action/${VERSION}`);
     } finally {
       globalThis.fetch = prev;
     }

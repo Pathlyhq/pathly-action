@@ -3,8 +3,25 @@
  * Auth: Bearer sp_… — never log the token.
  */
 
+import { readFileSync } from "node:fs";
+
 export const DEFAULT_API_URL = "https://api.pathlyhq.com";
-export const VERSION = "0.1.1";
+
+/**
+ * Version lue dans package.json à l'exécution : release-please ne touche que
+ * package.json, et dist/ reste identique à src/ sur la PR de version.
+ */
+export function readVersion(packageJson: URL): string {
+  try {
+    const parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { version?: unknown };
+    return typeof parsed.version === "string" && parsed.version ? parsed.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+// package.json est un cran au-dessus de src/ comme de dist/.
+export const VERSION = readVersion(new URL("../package.json", import.meta.url));
 export const DEFAULT_USER_AGENT = `pathly-github-action/${VERSION}`;
 
 export type FetchLike = typeof globalThis.fetch;
@@ -66,6 +83,20 @@ export type RunWaitOptions = {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 };
+
+/**
+ * Délai dépassé avant un statut terminal. `runId` porte l'identifiant du run
+ * s'il a été vu avant la fin du délai.
+ */
+export class RunTimeoutError extends Error {
+  readonly runId?: string;
+
+  constructor(message: string, runId?: string) {
+    super(message);
+    this.name = "RunTimeoutError";
+    this.runId = runId;
+  }
+}
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -348,7 +379,8 @@ export class PathlyClient {
 
   /**
    * POST /run puis poll GET /v1/runs jusqu'à un statut terminal (`ok` / `fail` / `error`).
-   * Lève si le run n'est pas `ok` ou si le délai expire — la CI passe au rouge.
+   * Rend le run quel que soit son statut final : l'appelant décide de l'échec.
+   * Lève `RunTimeoutError` si le délai expire.
    */
   async runAndWait(scenarioId: string, options: RunWaitOptions = {}): Promise<RunRecord> {
     const timeoutSec = options.timeoutSec ?? DEFAULT_RUN_TIMEOUT_SEC;
@@ -368,23 +400,18 @@ export class PathlyClient {
     await this.runScenario(scenarioId);
 
     let lastError: unknown;
+    let runId: string | undefined;
     while (now() < deadline) {
       try {
         const page = await this.listRuns({ scenarioId, limit: 20 });
         const fresh = page.items.find((r) => typeof r.id === "string" && r.id && !seen.has(r.id));
         if (fresh?.id) {
+          runId = String(fresh.id);
           const run = await this.getRun(String(fresh.id));
           const status = typeof run.status === "string" ? run.status : "";
-          if (isTerminalRunStatus(status)) {
-            if (status !== "ok") {
-              const detail = typeof run.message === "string" && run.message ? `: ${run.message}` : "";
-              throw new Error(`Pathly run ${run.id} ended with status ${status}${detail}`);
-            }
-            return run;
-          }
+          if (isTerminalRunStatus(status)) return run;
         }
       } catch (e) {
-        if (e instanceof Error && /ended with status/.test(e.message)) throw e;
         if (e instanceof PathlyError && e.notFound) {
           lastError = e;
         } else {
@@ -395,8 +422,9 @@ export class PathlyClient {
       await sleep(pollMs);
     }
     const hint = lastError instanceof Error ? ` (${lastError.message})` : "";
-    throw new Error(
+    throw new RunTimeoutError(
       `Pathly run for scenario ${scenarioId} did not finish within ${timeoutSec}s${hint}`,
+      runId,
     );
   }
 }

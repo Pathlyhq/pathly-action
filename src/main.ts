@@ -7,6 +7,7 @@ import { appendFileSync } from "node:fs";
 import {
   PathlyClient,
   PathlyError,
+  RunTimeoutError,
   apiUrlWarning,
   maskCommand,
   parseJsonInput,
@@ -176,14 +177,25 @@ export async function runAction(inputs: ActionInputs, fetchImpl?: typeof fetch):
       throw new Error('Input "scenario_id" is required for run-scenario');
     }
     const timeoutSec = parseTimeoutSec(inputs.timeoutSec);
-    const run = await client.runAndWait(scenarioId, { timeoutSec });
+    let run;
+    try {
+      run = await client.runAndWait(scenarioId, { timeoutSec });
+    } catch (e) {
+      // Les sorties sont écrites avant l'échec : une étape `if: failure()` peut les lire.
+      if (e instanceof RunTimeoutError) {
+        if (e.runId) setOutput("run_id", e.runId);
+        setOutput("ok", "false");
+      }
+      throw e;
+    }
     const status = typeof run.status === "string" ? run.status : "";
     setOutput("run_id", String(run.id ?? ""));
     setOutput("run_status", status);
     setOutput("ok", status === "ok" ? "true" : "false");
     console.log(`Pathly run ${run.id} finished with status ${status}.`);
     if (status !== "ok") {
-      throw new Error(`Pathly run ${run.id} status=${status || "unknown"} (expected ok)`);
+      const detail = typeof run.message === "string" && run.message ? `: ${run.message}` : "";
+      throw new Error(`Pathly run ${run.id} ended with status ${status}${detail}`);
     }
   }
 }

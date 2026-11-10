@@ -1,12 +1,13 @@
 import {
   PathlyClient,
   PathlyError,
+  RunTimeoutError,
   apiUrlWarning,
   maskCommand,
   parseJsonInput,
   parseOperation,
   parseTimeoutSec
-} from "./chunk-742Q5Z6C.js";
+} from "./chunk-S6ZAVKKJ.js";
 
 // src/main.ts
 import { appendFileSync } from "fs";
@@ -145,14 +146,24 @@ async function runAction(inputs, fetchImpl) {
       throw new Error('Input "scenario_id" is required for run-scenario');
     }
     const timeoutSec = parseTimeoutSec(inputs.timeoutSec);
-    const run = await client.runAndWait(scenarioId, { timeoutSec });
+    let run;
+    try {
+      run = await client.runAndWait(scenarioId, { timeoutSec });
+    } catch (e) {
+      if (e instanceof RunTimeoutError) {
+        if (e.runId) setOutput("run_id", e.runId);
+        setOutput("ok", "false");
+      }
+      throw e;
+    }
     const status = typeof run.status === "string" ? run.status : "";
     setOutput("run_id", String(run.id ?? ""));
     setOutput("run_status", status);
     setOutput("ok", status === "ok" ? "true" : "false");
     console.log(`Pathly run ${run.id} finished with status ${status}.`);
     if (status !== "ok") {
-      throw new Error(`Pathly run ${run.id} status=${status || "unknown"} (expected ok)`);
+      const detail = typeof run.message === "string" && run.message ? `: ${run.message}` : "";
+      throw new Error(`Pathly run ${run.id} ended with status ${status}${detail}`);
     }
   }
 }
