@@ -20,12 +20,13 @@ Action GitHub prête marketplace pour brancher le monitoring synthétique [Pathl
 
 ## Rôle
 
-`pathlyhq/setup-pathly` vérifie votre jeton d’API Pathly (`sp_…`) contre `https://api.pathlyhq.com`, puis peut :
+`pathlyhq/pathly-action` vérifie votre jeton d’API Pathly (`sp_…`) contre `https://api.pathlyhq.com`, puis peut :
 
 - créer ou garantir un scénario HTTP
 - lister les scénarios
 - créer un webhook sortant signé
 - upsert un objectif de disponibilité (SLA)
+- vérifier le dernier statut d’un scénario, sans lancer de run
 - lancer un scénario et faire échouer le job si le run n’est pas `ok`
 
 Utile en porte de déploiement, smoke post-merge, ou Pathly-as-code depuis Actions.
@@ -59,6 +60,23 @@ Garantir un scénario HTTP après déploiement :
       }
 ```
 
+Vérifier le dernier statut d’un scénario après le job de tests (la CI passe au rouge s’il n’est pas `ok`) :
+
+```yaml
+pathly:
+  needs: test
+  runs-on: ubuntu-latest
+  steps:
+    - name: Vérifier que le panier est vert
+      uses: pathlyhq/pathly-action@v1
+      with:
+        api_token: ${{ secrets.PATHLY_API_TOKEN }}
+        operation: assert-scenario
+        scenario_id: ${{ vars.PATHLY_CHECKOUT_SCENARIO_ID }}
+```
+
+`assert-scenario` lit le scénario (`GET /v1/scenarios/{id}`) et fait échouer le job si son dernier statut n’est pas `ok`. Il ne lance aucun run. Il ne consomme donc aucune exécution de votre offre, et la clé n’a besoin que de la portée `scenarios:read`. `run-scenario` lance un nouveau run et attend son résultat. Utilisez-le après un déploiement, quand il vous faut un résultat sur la version que vous venez de livrer. Sa clé demande les portées `runs:trigger` et `runs:read`.
+
 Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 
 ## Entrées
@@ -67,11 +85,11 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 |--------|-------------|--------|-------------|
 | `api_token` | oui | — | Jeton Pathly (`sp_…`). À stocker dans les Secrets GitHub. |
 | `api_url` | non | `https://api.pathlyhq.com` | Base de l’API |
-| `operation` | non | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `run-scenario` \| `run-and-wait` |
+| `operation` | non | `ping` | `ping` \| `create-scenario` \| `ensure-scenario` \| `list-scenarios` \| `create-webhook` \| `upsert-sla` \| `assert-scenario` \| `run-scenario` \| `run-and-wait` |
 | `scenario_json` | scénarios | — | JSON avec au moins `name` et `url` |
 | `webhook_json` | webhook | — | JSON avec `url` et `events` |
 | `sla_json` | SLA | — | JSON avec `objectivePct` et `windowDays` |
-| `scenario_id` | `run-scenario` | — | UUID du scénario à lancer |
+| `scenario_id` | `assert-scenario`, `run-scenario`, `run-and-wait` | — | UUID du scénario à vérifier ou à lancer |
 | `timeout_sec` | non | `120` | Délai d’attente d’un statut terminal (`ok` / `fail` / `error`) |
 
 ## Sorties
@@ -83,12 +101,14 @@ Exemple complet : [`examples/workflow.yml`](./examples/workflow.yml).
 | `count`, `scenarios_json` | `list-scenarios` |
 | `webhook_id`, `webhook_secret` | `create-webhook` (secret une seule fois) |
 | `sla_id` | `upsert-sla` |
+| `scenario_id`, `run_status`, `ok` | `assert-scenario` (`run_status` est le dernier statut, `unknown` si le scénario n’a jamais tourné) |
 | `run_id`, `run_status`, `ok` | `run-scenario` / `run-and-wait` |
 
 ## Sécurité
 
 - Ne jamais committer de jetons `sp_`. Utiliser `secrets.PATHLY_API_TOKEN`.
 - Moindre privilège : `scenarios:read`, `scenarios:write`, `runs:trigger` + `runs:read`, `alerting:write`, `sla:write` selon le besoin.
+- `assert-scenario` ne demande que la portée `scenarios:read`. Il lit le scénario et ne lance aucun run.
 - `ping` appelle `GET /v1/usage`. Un HTTP `403` est un succès (jeton valide, portée `org:read` absente).
 - Les créations portent un en-tête `Idempotency-Key`.
 - Le jeton est masqué dans les journaux du job dès sa lecture, même s'il ne vient pas de `secrets.*`. La sortie `webhook_secret` est masquée aussi.
@@ -116,7 +136,7 @@ npm run build
 | Package | Role |
 |---|---|
 | [pathly-gitlab-ci](https://github.com/pathlyhq/pathly-gitlab-ci) | GitLab CI templates |
-| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathlyhq/sdk |
+| [pathly-sdk-typescript](https://github.com/pathlyhq/pathly-sdk-typescript) | @pathly/sdk |
 | [pathly-sdk-python](https://github.com/pathlyhq/pathly-sdk-python) | Python SDK |
 | [pathly-postman](https://github.com/pathlyhq/pathly-postman) | Postman collection |
 | [Pathly product](https://pathlyhq.com) | [Pathly monitoring](https://pathlyhq.com) |
